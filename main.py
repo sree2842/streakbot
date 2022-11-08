@@ -505,7 +505,7 @@ def main():
     updater.start_webhook(listen="0.0.0.0",
                           port=int(PORT),
                           url_path=TOKEN,
-                          webhook_url='https://testingnotes.herokuapp.com/' + TOKEN)
+                          webhook_url='https://mystreakbot.herokuapp.com/' + TOKEN)
     updater.idle()
 ###############################################
 if __name__ == '__main__':
