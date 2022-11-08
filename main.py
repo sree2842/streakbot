@@ -10,7 +10,7 @@ from telegram.ext import (
     CallbackContext,
 )
 from datetime import datetime,time
-import logging,pytz
+import logging,pytz,os
 from operator import itemgetter
 import inspect
 
@@ -20,8 +20,10 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+TOKEN = os.environ.get('TOKEN')
+PORT = int(os.environ.get('PORT',88))
 
-updater = Updater('5712036028:AAF1VQryr9iPxbx8qcMI6dLkGwLB1_qCuFo')
+updater = Updater(TOKEN,use_context = True)
 ONE,TWO,THREE,STATE = map(chr,range(4))
 
 read_data = open('data.txt','r')
@@ -500,7 +502,10 @@ def main():
     #dp.add_handler(CommandHandler("stats",stats))
     dp.add_handler(CommandHandler("stop",stop))
 
-    updater.start_polling()
+    updater.start_webhook(listen="0.0.0.0",
+                          port=int(PORT),
+                          url_path=TOKEN,
+                          webhook_url='https://testingnotes.herokuapp.com/' + TOKEN)
     updater.idle()
 ###############################################
 if __name__ == '__main__':
