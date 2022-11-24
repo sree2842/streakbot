@@ -13,6 +13,7 @@ from datetime import datetime,time
 import logging,pytz,os
 from operator import itemgetter
 import inspect
+import sqldb
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
@@ -26,34 +27,6 @@ PORT = int(os.environ.get('PORT',88))
 updater = Updater(TOKEN,use_context = True)
 ONE,TWO,THREE,STATE = map(chr,range(4))
 
-read_data = open('data.txt','r')
-data_lines = read_data.readlines()     #skip first line
-data = [d.split("    ") for d in data_lines]
-
-CHAT_IDS = [line[0] for line in data]
-TASK_DATA = []
-task_details = ["name","about","goal","streak","week_streak","done_today"]
-for line in data:
-    user_tasks = []
-    temp = line[1]
-    tasks = temp.split("   ")
-    task_data = {}
-    for task in tasks:
-        task = task.split("  ")
-        if len(task)<7:
-            task.append("")
-            dates_list = []
-        else:
-            dates_list = task[-1].split(",")
-        task_data = dict(zip(task_details,task[:-1]))
-        task_data['dates'] = dates_list
-        #task_data['streak'] = int(task_data['streak'])
-        #task_data['week_streak'] = int(task_data['week_streak'])
-        user_tasks.append(task_data)
-    TASK_DATA.append(user_tasks)
-read_data.close()
-print(TASK_DATA)
-
 HELPTEXT = inspect.cleandoc("""
     Use below Commands to communicate
 
@@ -61,114 +34,52 @@ HELPTEXT = inspect.cleandoc("""
     /mytasks - Get all active tasks
     /streak - To get streak
     /done - To mark the task as completed
+    """)
+'''
     /todaystats - Status of today tasks
     /weekcharts - Your progress in the week
     /stop - To stop notifications
     """)
+'''
 
-def update_datafile():
-    global CHAT_IDS,TASK_DATA
-    write_data = open('data.txt','w')
-    #print(CHAT_IDS,TASK_DATA)
-    file_lines = []
-    for ind in range(len(CHAT_IDS)):
-        line = str(CHAT_IDS[ind])+" "
-        text = ""
-        for task in TASK_DATA[ind]:
-            text+="   "
-            values = list(task.values())
-            print(values)
-            if values[-1]==[]:
-                values.pop(-1)
-                text += "  ".join(values)
-            else:
-                text += "  ".join(values[:-1])
-                dates = ",".join(values[-1])
-                text += "  "+dates
-            
-            print(text)
-        line += text
-        file_lines.append(line)
-    print(file_lines)
-    write_data.writelines(file_lines)
-    write_data.close()
-    print("written data")
-
+TIMERS = (8,22)
 
 states = {STATE:[]}
-class Task:
-    def __init__(self):
-        self.name = 'Untitled task'
-        self.about = "Task"
-        self.goal = 7
-        self.streak = 0
-        self.dates = []
-        self.week_streak = 0
-        self.done_today = "No"
-
-    def done(self):
-        today = datetime.now().strftime('%d/%m/%Y')
-        self.streak+=1
-        self.week_streak+=1
-        self.done_today = "Yes"
-        self.dates.append(today)
-
-    def streak_details(self):
-        text = '\n'
-        text += f"Streak - {str(self.streak)}"
-        text+=f"\nDone today : {str(self.done_today)}"
-        return text
-
-    def set_name(self,name):
-        self.name = name
-
-    def get_streak(self):
-        return self.streak
-
-    def get_streak_calender(self):
-        for day in self.dates:
-            return day
 
 def start(update:Update, context:CallbackContext):
-    context.user_data['tasks'] = []
     chat_id = update.message.chat_id
-    context.user_data['chat_id']=chat_id
-    print(CHAT_IDS,TASK_DATA)
-    if str(chat_id) in CHAT_IDS:
-        text = "Hello existing user\nYour data is been Successfully loaded"
-        ind = CHAT_IDS.index(str(chat_id))
-        tasks = TASK_DATA[ind]
-        for t in tasks:
-            task = Task()
-            task.name = t["name"]
-            task.about = t["about"]
-            task.streak = int(t["streak"])
-            task.week_streak = int(t["week_streak"])    
-            task.done_today = t["done_today"]
-            task.dates = t["dates"]
-            context.user_data['tasks'].append(task)
+
+    user_exists = sqldb.check_user(chat_id)
+
+    if user_exists:
+        text = "Hello existing user\nWelcome back"
     else:
-        text = "Hello welcome to streak bot"
-        text += "\n\nThis bot helps you to stay committed to your tasks, it can calculate the streak for your tasks."
+        text = "Welcome to streak bot"
+        #text += "\n\nThis bot helps you to stay committed to your tasks, it can calculate the streak for your tasks."
         text += "\n\n"+HELPTEXT
         text += "\n/help - Get list of available commands anytime"
+
+        message = sqldb.add_user(chat_id)
+        logger.info(message)
+
     update.message.reply_text(text)
 
-    now = datetime.now()
-    context.job_queue.run_daily(
-        notify,
-        time=time(int(now.strftime('%H')),int(now.strftime('%M')),tzinfo=pytz.timezone('Asia/Kolkata')),
-        #time = time(22,41,tzinfo=pytz.timezone('Asia/Kolkata')),
-        #30,
-        context=context,
-        name=str(chat_id),
-        )
+    for hour in TIMERS:
+        context.job_queue.run_daily(
+                notify,
+                time=time(hour,tzinfo=pytz.timezone('Asia/Kolkata')),
+                #time = time(22,41,tzinfo=pytz.timezone('Asia/Kolkata')),
+                context=context,
+                name=str(chat_id)+str(hour),
+            )
+
     context.job_queue.run_daily(
         reset,
         time=time(0,tzinfo=pytz.timezone('Asia/Kolkata')),
         context=context,
         name=str(chat_id)+"date",
         )
+
 ########## New task ###########
 def get_tasks_name(tasks):
     names = []
@@ -176,25 +87,33 @@ def get_tasks_name(tasks):
         names.append(task.name)
 
     return names
+########## New task ###########
 
 def add_task(update:Update, context:CallbackContext):
     chat_id = update.message.chat_id
+    logger.info(f"Creating new task for user {chat_id}")
 
-    task = Task()
-    context.user_data['tasks'].append(task)
+    context.user_data['task'] = {}
     context.bot.send_message(chat_id, 
         text = "Give a name to your task\nType 'cancel' anytime to cancel adding a task")
+
     return ONE
 
 def take_name(update,context):
+    '''
+    Need to update if task exists ask user to modify are continue with out updating previous task
+    '''
     chat_id = update.message.chat_id
     name = update.message.text
-    tasks = context.user_data['tasks']
-    if name in get_tasks_name(tasks):
+    logger.info(f"Got task name {name}")
+
+    task_exists = sqldb.check_task(chat_id,name)
+    if task_exists:
         update.message.reply_text("Task alreay exists. Updating the task.")
         return THREE
     else:
-        context.user_data['tasks'][-1].name = name
+        context.user_data['task']['TaskName'] = name
+
     context.bot.send_message(chat_id,
         text=f'Describe few words about task {name}\nIt may help you to understand purpose of the task')
 
@@ -203,7 +122,9 @@ def take_name(update,context):
 def take_about(update,context):
     chat_id = update.message.chat_id
     about = update.message.text
-    context.user_data['tasks'][-1].about = about
+    logger.info(f"Got task about {about}")
+
+    context.user_data['task']['About'] = about
 
     reply_keyboard = [['1 Day', '2 Days'], ['3 Days', '4 Days'], ['5 Days', '6 Days'], ['Complete Week']]
     context.bot.send_message(chat_id,
@@ -217,45 +138,41 @@ def take_about(update,context):
 def streak_goal(update,context):
     chat_id = update.message.chat_id
     text = update.message.text
-    task = context.user_data['tasks'][-1]
-    goal = task.goal
+    task_name = context.user_data['task']['TaskName']
+    goal = 7
+
     try:
         if text=='Complete Week':
-            goal = 7
+            goal = 7    
         else:
             goal = int(text[0])
-        text = f'Successfully created task, you will be notified {goal} days every week'
+
+        text = f'Successfully created task, you need to complete this task {goal} days every week'
+        if goal==1:
+            text = f'Successfully created task, you need to complete this task {goal} day every week'
     except:
-        text = f'Invalid goal selection\nCreated task {task.name}, you will be notified {goal} days every week'
-    task.goal = goal
-    #print(text)
+        text = f'Invalid goal selection\nCreated task {task_name}, Task goal is set to {goal} days every week'
+    
+    logger.info(f"Set task goal {goal}")
+    context.user_data['task']['Goal'] = goal
+    streaks = {'Streak':0,'WeekStreak':0,'DoneToday':'No'}
+    context.user_data['task'].update(streaks)
+
+    task_dict = context.user_data['task']
+    message = sqldb.add_task(chat_id,task_dict)
+
     update.message.reply_text(text=str(text),reply_markup=ReplyKeyboardRemove())
+    logger.info(message)
 
-    task_details = {"name":task.name,
-                "about":task.about,
-                "goal":str(task.goal),
-                "streak":str(task.streak),
-                "week_streak":str(task.week_streak),
-                "done_today":str(task.done_today),
-                "dates":task.dates
-                }
-
-    if str(chat_id) not in CHAT_IDS:
-        CHAT_IDS.append(str(chat_id))
-        TASK_DATA.append([task_details])
-    else:
-        ind = CHAT_IDS.index(str(chat_id))
-        TASK_DATA[ind].append(task_details)
-
-    update_datafile()
     return ConversationHandler.END
 
 def cancel(update:Update,context:CallbackContext):
+    logger.info('Cancelled task Creation')
     update.message.reply_text(
         'Cancelled task Creation!',
     )
-    #task = context.user_data['tasks'][-1]
-    del context.user_data['tasks'][-1]
+
+    del context.user_data['task']
     return ConversationHandler.END
 ################################
 
@@ -352,7 +269,7 @@ def charts(update,context):
     context.bot.send_message(chat_id,text=text)
 #################################
 
-############### Keyboards #################
+############### Done & Streak #################
 def get_keyboard(tasks,callback_func):
     states[STATE] = []
     buttons = []
@@ -360,7 +277,7 @@ def get_keyboard(tasks,callback_func):
     count = 0
     for index,task in enumerate(tasks):
         states[STATE].append(CallbackQueryHandler(callback_func, pattern=index))
-        button = InlineKeyboardButton(text=task.name, callback_data=index)
+        button = InlineKeyboardButton(text=task, callback_data=index)
         temp.append(button)
         if count:
             count = 0
@@ -371,7 +288,9 @@ def get_keyboard(tasks,callback_func):
     return buttons
 
 def done(update,context):
-    tasks = context.user_data['tasks']
+    chat_id = update.message.chat_id
+    context.user_data['chat_id'] = chat_id
+    tasks = sqldb.get_tasks(chat_id)
     if tasks:
         text = "Pick one from below"
         buttons = get_keyboard(tasks,mark_done)
@@ -385,32 +304,19 @@ def done(update,context):
 
 def mark_done(update,context):
     index = update.callback_query.data
-    tasks = context.user_data['tasks'] 
-    task = tasks[int(index)]
+    index = int(index)+1
     chat_id = context.user_data['chat_id']
-    stats = today_stats(tasks)
-    if task.done_today=="Yes":
-        text="you've already completed this task"
-    else:
-        task.done()
-        text=f"Completed task {task.name}"
-        ind = CHAT_IDS.index(str(chat_id))
-        user_tasks = TASK_DATA[ind]
-        for t in user_tasks:
-            name = t["name"]
-            if task.name == name:
-                t['streak'] = str(task.streak)
-                t['week_streak'] =str(task.week_streak)
-                t['done_today'] = str(task.done_today)
-                t['dates'] = task.dates
-        update_datafile()
+
+    text = sqldb.mark_task(chat_id,index)
     update.callback_query.answer()
     update.callback_query.edit_message_text(text=text)
-    #update.message.reply_text(stats)
+    logger.info(f'{chat_id} {text}')
     return ConversationHandler.END
 
 def streak(update,context):
-    tasks = context.user_data['tasks']
+    chat_id = update.message.chat_id
+    context.user_data['chat_id'] = chat_id
+    tasks = sqldb.get_tasks(chat_id)
     if tasks:
         text = "Pick one from below"
         buttons = get_keyboard(tasks,get_streak)
@@ -424,8 +330,10 @@ def streak(update,context):
 
 def get_streak(update,context):
     index = update.callback_query.data
-    task = context.user_data['tasks'][int(index)]
-    streak = task.streak_details()
+    index = int(index)+1
+    chat_id = context.user_data['chat_id']
+
+    streak = sqldb.get_streak(chat_id,index)
     update.callback_query.answer()
     update.callback_query.edit_message_text(text=streak)
     return ConversationHandler.END
@@ -435,11 +343,12 @@ def get_streak(update,context):
 
 ########## Get tasks ############
 def get_tasks(update,context):
-    tasks = context.user_data['tasks']
+    chat_id = update.message.chat_id
+    tasks = sqldb.get_tasks(chat_id)
     text = 'Active tasks : \n'
     if tasks:
-        for i in range(len(tasks)):
-            text+=str(i+1)+". "+tasks[i].name+"\n"
+        for i,task in enumerate(tasks):
+            text+=str(i+1)+". "+task+"\n"
     else:
         text = 'No tasks assigned yet. Use /newtask to create a task'
     update.message.reply_text(text)
@@ -472,8 +381,8 @@ def main():
         entry_points=[CommandHandler('newtask', add_task)],
         states={
             ONE: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_name)],
-            TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_about)],
-            THREE: [MessageHandler(Filters.text & ~Filters.regex('cancel'), streak_goal),
+            #TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_about)],
+            TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), streak_goal),
             ],
         },
         fallbacks = [MessageHandler(Filters.regex('cancel'), cancel),
