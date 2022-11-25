@@ -4,7 +4,7 @@ from datetime import datetime
 db = psycopg2.connect(
 		host='dpg-ce05egarrk09es9d6tig-a',
 		user='sreekanth',
-		passwd='tNwdUg69effXSdwvY5KoqvgO5jFrQ4zG',
+		password='tNwdUg69effXSdwvY5KoqvgO5jFrQ4zG',
 		database = 'mysql_cecx'
 	)
 
