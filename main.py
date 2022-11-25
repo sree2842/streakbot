@@ -10,7 +10,7 @@ from telegram.ext import (
     CallbackContext,
 )
 from datetime import datetime,time
-import logging,pytz,os
+import logging,pytz
 from operator import itemgetter
 import inspect
 import sqldb
@@ -21,10 +21,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-TOKEN = os.environ.get('TOKEN')
-PORT = int(os.environ.get('PORT',88))
 
-updater = Updater(TOKEN,use_context = True)
+updater = Updater('5712036028:AAF1VQryr9iPxbx8qcMI6dLkGwLB1_qCuFo')
 ONE,TWO,THREE,STATE = map(chr,range(4))
 
 HELPTEXT = inspect.cleandoc("""
@@ -80,13 +78,13 @@ def start(update:Update, context:CallbackContext):
         name=str(chat_id)+"date",
         )
 
-########## New task ###########
 def get_tasks_name(tasks):
     names = []
     for task in tasks:
         names.append(task.name)
 
     return names
+
 ########## New task ###########
 
 def add_task(update:Update, context:CallbackContext):
@@ -175,6 +173,7 @@ def cancel(update:Update,context:CallbackContext):
     del context.user_data['task']
     return ConversationHandler.END
 ################################
+
 
 
 ######## Tasks stats #############
@@ -283,8 +282,9 @@ def get_keyboard(tasks,callback_func):
             count = 0
             buttons.append(temp)
             temp=[]
+            continue
         count+=1
-    buttons.append(temp)
+    buttons.append(temp) 
     return buttons
 
 def done(update,context):
@@ -375,14 +375,14 @@ def stop(update,context):
 def main():
     dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("start",start))
+    dp.add_handler(CommandHandler("start",start,pass_args=True))
 
     task_handler = ConversationHandler(
-        entry_points=[CommandHandler('newtask', add_task)],
+        entry_points=[CommandHandler('newtask', add_task,pass_args=True)],
         states={
             ONE: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_name)],
-            #TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_about)],
-            TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), streak_goal),
+            TWO: [MessageHandler(Filters.text & ~Filters.regex('cancel'), take_about)],
+            THREE: [MessageHandler(Filters.text & ~Filters.regex('cancel'), streak_goal),
             ],
         },
         fallbacks = [MessageHandler(Filters.regex('cancel'), cancel),
@@ -391,8 +391,8 @@ def main():
 
     done_handler = ConversationHandler(
         entry_points=[
-            CommandHandler('done', done),
-            CommandHandler('streak',streak)
+            CommandHandler('done', done,pass_args=True),
+            CommandHandler('streak',streak,pass_args=True)
             ],
         states=states,
         fallbacks = [MessageHandler(Filters.regex('cancel'), cancel),
@@ -403,18 +403,15 @@ def main():
 
     dp.add_handler(task_handler)
     dp.add_handler(done_handler)
-    dp.add_handler(CommandHandler("mytasks",get_tasks))
-    dp.add_handler(CommandHandler("help",bot_help))
-    dp.add_handler(CommandHandler("weekcharts",week_stats))
-    dp.add_handler(CommandHandler("todaystats",day_stats))
-    dp.add_handler(CommandHandler("charts",charts))
+    dp.add_handler(CommandHandler("mytasks",get_tasks,pass_args=True))
+    dp.add_handler(CommandHandler("help",bot_help,pass_args=True))
+    dp.add_handler(CommandHandler("weekcharts",week_stats,pass_args=True))
+    dp.add_handler(CommandHandler("todaystats",day_stats,pass_args=True))
+    dp.add_handler(CommandHandler("charts",charts,pass_args=True))
     #dp.add_handler(CommandHandler("stats",stats))
-    dp.add_handler(CommandHandler("stop",stop))
+    dp.add_handler(CommandHandler("stop",stop,pass_args=True))
 
-    updater.start_webhook(listen="0.0.0.0",
-                          port=int(PORT),
-                          url_path=TOKEN,
-                          webhook_url='https://mystreakbot.herokuapp.com/' + TOKEN)
+    updater.start_polling()
     updater.idle()
 ###############################################
 if __name__ == '__main__':
